@@ -1,0 +1,34 @@
+/config
+    db.js
+/middleware
+    authMiddleware.js
+    errorHandler.js
+/Controller
+    userController.js
+        ->Login
+        ->Signup
+        ->Update
+        ->Delete
+        ->Display_profile
+
+    postController.js
+        ->Create_post
+        ->Update_post
+        ->Delete_post
+        ->Display_the-post
+     
+    commentController.js
+        ->Create-comment_post
+        ->Edit_comment
+        ->Delete_comment
+        ->Show_comments
+
+    likeController.js
+        ->Like_post
+        ->Unlike_post
+        ->Total_likes_on_post
+/routes
+    UserRoutes.js
+    PostRoutes.js
+    CommentRoutes.js
+    LikeRoutes.js
