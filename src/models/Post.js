@@ -1,22 +1,25 @@
-class Post {
-    constructor(title, content, author) {
-        this.title = title;
-        this.content = content;
-        this.author = author;
-        this.createdAt = new Date();
-        this.updatedAt = new Date();
-    }
-
-    updateContent(newContent) {
-        this.content = newContent;
-        this.updatedAt = new Date();
-    }
-
-    static validatePostData(data) {
-        if (!data.title || !data.content || !data.author) {
-            throw new Error("Title, content, and author are required.");
+export default (sequelize, DataTypes) => {
+  const Post = sequelize.define('Post', {
+    content: DataTypes.TEXT,
+    image_url: DataTypes.STRING,
+  }, {
+    tableName: 'posts',
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    hooks: {
+      beforeCreate: (post) => {
+        if (post.content) {
+          post.content = post.content.trim();
         }
+      },
+      beforeUpdate: (post) => {
+        if (post.content) {
+          post.content = post.content.trim();
+        }
+      }
     }
-}
+  });
 
-module.exports = Post;
+  return Post;
+};

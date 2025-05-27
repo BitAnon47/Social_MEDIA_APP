@@ -1,95 +1,151 @@
-const db = require('../config/db'); // Assuming you have db connection setup
-const moment = require('moment');
+import db from '../models/index.js';
+
+const { Post, User,Like,Comment } = db;
 
 // Create a new post
-exports.createPost = async (req, res) => {
-    const { user_id, content, image_url } = req.body;
+export const createPost = async (req, res) => {
+  const { user_id, content, image_url } = req.body;
 
-    try {
-        const [result] = await db.query(
-            'INSERT INTO posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, ?)',
-            [user_id, content, image_url, moment().format('YYYY-MM-DD HH:mm:ss')]
-        );
+  try {
+    const post = await Post.create({
+      user_id,
+      content,
+      image_url,
+      // If your Post model uses defaultValue for createdAt, no need to pass it here
+    });
 
-        res.status(201).json({ message: 'Post created successfully', postId: result.insertId });
-    } catch (error) {
-        res.status(500).json({ message: 'Error creating post', error });
-    }
+    res.status(201).json({ message: 'Post created successfully', postId: post.id });
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating post', error });
+  }
 };
 
-// Get all posts with user, likes, and comments count
-exports.getAllPosts = async (req, res) => {
-    try {
-        const [posts] = await db.query(`
-            SELECT 
-                p.id AS post_id,
-                p.content,
-                p.image_url,
-                p.created_at,
-                u.username,
-                u.profile_image,
-                COUNT(DISTINCT l.id) AS likes_count,
-                COUNT(DISTINCT c.id) AS comments_count
-            FROM posts p
-            JOIN users u ON p.user_id = u.id
-            LEFT JOIN likes l ON p.id = l.post_id
-            LEFT JOIN comments c ON p.id = c.post_id
-            GROUP BY p.id
-            ORDER BY p.created_at DESC
-        `);
+// Edit a post by ID
+export const updatePost = async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
 
-        res.status(200).json(posts);
-    } catch (error) {
-        res.status(500).json({ message: 'Error fetching posts', error });
+  try {
+    const post = await Post.findByPk(id);
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
     }
+
+    await post.update(updates);
+    res.status(200).json({ message: "Post updated successfully", post });
+  } catch (error) {
+    res.status(500).json({ message: "Error updating post", error });
+  }
 };
 
-// Get a single post by ID with joins
-exports.getPostById = async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const [rows] = await db.query(`
-            SELECT 
-                p.id AS post_id,
-                p.content,
-                p.image_url,
-                p.created_at,
-                u.username,
-                u.profile_image,
-                COUNT(DISTINCT l.id) AS likes_count,
-                COUNT(DISTINCT c.id) AS comments_count
-            FROM posts p
-            JOIN users u ON p.user_id = u.id
-            LEFT JOIN likes l ON p.id = l.post_id
-            LEFT JOIN comments c ON p.id = c.post_id
-            WHERE p.id = ?
-            GROUP BY p.id
-        `, [id]);
-
-        if (rows.length === 0) {
-            return res.status(404).json({ message: 'Post not found' });
+// Get all posts with user info, likes count, and comments count
+export const getAllPosts = async (req, res) => {
+  try {
+    const posts = await Post.findAll({
+      attributes: ['id', 'content', 'created_at'], // include your own fields
+      include: [
+        {
+          model: User,
+          required: true,
+          attributes: ['username', 'profile_image_url']
+        },
+        {
+          model: Like,
+          attributes: [],
+          separate: true
+        },
+        {
+          model: Comment,
+          attributes: [],
+          separate: true
         }
+      ]
+    });
 
-        res.status(200).json(rows[0]);
-    } catch (error) {
-        res.status(500).json({ message: 'Error fetching post', error });
+    // Manually add likes_count and comments_count
+    const result = await Promise.all(
+      posts.map(async post => {
+        const likesCount = await Like.count({ where: { post_id: post.id } });
+        const commentsCount = await Comment.count({ where: { post_id: post.id } });
+
+        return {
+          ...post.toJSON(),
+          likes_count: likesCount,
+          comments_count: commentsCount
+        };
+      })
+    );
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error(error); // Add this
+    res.status(500).json({ message: 'Error fetching posts', error: error.message || error.toString() });
+
+  }
+};
+
+// Get a single post by ID with user info, likes count, and comments count
+export const getPostById = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const post = await Post.findOne({
+      where: { id },
+      attributes: {
+        include: [
+          [
+            Post.sequelize.literal(`(
+              SELECT COUNT(*)
+              FROM likes AS like
+              WHERE
+                like.post_id = Post.id
+            )`),
+            'likes_count'
+          ],
+          [
+            Post.sequelize.literal(`(
+              SELECT COUNT(*)
+              FROM comments AS comment
+              WHERE
+                comment.post_id = Post.id
+            )`),
+            'comments_count'
+          ]
+        ],
+        exclude: ['user_id']
+      },
+      include: [
+        {
+          model: User,
+          attributes: ['username', 'profile_image_url']
+        }
+      ]
+    });
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
     }
+
+    res.status(200).json(post);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching post', error });
+  }
 };
 
 // Delete a post by ID
-exports.deletePost = async (req, res) => {
-    const { id } = req.params;
+export const deletePost = async (req, res) => {
+  const { id } = req.params;
 
-    try {
-        const [result] = await db.query('DELETE FROM posts WHERE id = ?', [id]);
+  try {
+    const deleted = await Post.destroy({ where: { id } });
 
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Post not found' });
-        }
-
-        res.status(200).json({ message: 'Post deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ message: 'Error deleting post', error });
+    if (!deleted) {
+      return res.status(404).json({ message: 'Post not found' });
     }
+
+    res.status(200).json({ message: 'Post deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting post', error });
+  }
 };
